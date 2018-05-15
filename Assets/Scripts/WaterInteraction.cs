@@ -8,17 +8,20 @@ namespace JustPirate
 public class WaterInteraction : MonoBehaviour
 {
     public GameObject underWaterObj;
-    private Rigidbody boatRB;
+    public GameObject aboveWaterObj;
+    private Rigidbody hullRB;
     private Mesh underWaterMesh;
-    private HullMeshModifier hullMeshModifier;
-    private float density = 999.1026f; // kg/m^3 in 15 Celcius
+    private Mesh aboveWaterMesh;
 
+    private HullMeshModifier hullMeshModifier;
+    private float densityOfWater = 999.1026f; // kg/m^3 in 15 Celcius
 
     void Start()
     {
-        boatRB = GetComponent<Rigidbody>();
-        hullMeshModifier = new HullMeshModifier(gameObject);
+        hullRB = GetComponent<Rigidbody>();
+        hullMeshModifier = new HullMeshModifier(gameObject, underWaterObj, aboveWaterObj);
         underWaterMesh = underWaterObj.GetComponent<MeshFilter>().mesh;
+        aboveWaterMesh = aboveWaterObj.GetComponent<MeshFilter>().mesh;
     }
 
     void Update()
@@ -32,63 +35,77 @@ public class WaterInteraction : MonoBehaviour
     {
         // Update Force
         if (hullMeshModifier.submergedTriangles.Count > 0)
-            CalculateHydroStaticForce();
+            AddHydroForce();
     }
 
-    private void CalculateHydroStaticForce()
+    private void AddHydroForce()
     {
         // Need density, gravity, h_center, normal vector
         List<TriangleData> submergedTriangles = hullMeshModifier.submergedTriangles;
+        float Cf = WaterPhysicsMath.ResistanceCoefficient(
+                densityOfWater,
+                hullRB.velocity.magnitude,
+                hullMeshModifier.CalculateUnderWaterLength());
+
+        //To calculate the slamming force we need the velocity at each of the original triangles
+        List<SlammingForceData> slammingForceData = hullMeshModifier.slammingForceDataList;
+
+        CalculateSlammingVelocities(slammingForceData);
+
+        //Need this data for slamming forces
+        float boatArea = hullMeshModifier.boatArea;
+        float boatMass = hullRB.mass; //Replace this line with your boat's total mass
+
+        //To connect the submerged triangles with the original triangles
+        List<int> indexOfOriginalTriangle = hullMeshModifier.indexOfOriginalTriangle;
 
         for (int i = 0; i < submergedTriangles.Count; i++)
         {
             // This triangle
             TriangleData triangleData = submergedTriangles[i];
 
-            // Calculate the buoyancy force
-            Vector3 buoyancyForce = BuoyancyForce(density, triangleData);
-
             if (triangleData.centerDistance > 0)
             {
-                //Normal
-                Debug.DrawRay(triangleData.center, triangleData.normal * 3f, Color.red);
-
-                //Buoyancy
-                Debug.DrawRay(triangleData.center, buoyancyForce.normalized * -3f, Color.yellow);
+                // Debug.DrawRay(triangleData.center, triangleData.normal * 3f, Color.red);
                 continue;
             }
 
+            Vector3 buoyancyForce = WaterPhysicsMath.BuoyancyForce(densityOfWater, triangleData);
+            Vector3 viscousWaterResistance = WaterPhysicsMath.ViscousWaterResistance(densityOfWater, Cf, triangleData);
+            Vector3 pressureDragForce = WaterPhysicsMath.PressureDragForce(triangleData);
+
+            int originalTriangleIndex = indexOfOriginalTriangle[i];
+            SlammingForceData slammingData = slammingForceData[originalTriangleIndex];
+            Vector3 slammingForce = WaterPhysicsMath.SlammingForce(slammingData, triangleData, boatArea, boatMass);
+            Vector3 totalForce = Vector3.zero;
+            totalForce += buoyancyForce;
+            totalForce += viscousWaterResistance;
+            totalForce += pressureDragForce;
+            totalForce += slammingForce;
+
             //Add the force to the boat
-            boatRB.AddForceAtPosition(buoyancyForce, triangleData.center);
-
+            hullRB.AddForceAtPosition(totalForce, triangleData.center);
             //Normal
-            Debug.DrawRay(triangleData.center, triangleData.normal * 3f, Color.white);
-
+            // Debug.DrawRay(triangleData.center, triangleData.normal * 3f, Color.white);
             //Buoyancy
-            Debug.DrawRay(triangleData.center, buoyancyForce.normalized * -3f, Color.blue);
+            // Debug.DrawRay(triangleData.center, buoyancyForce.normalized * -3f, Color.blue);
         }
     }
 
-    private Vector3 BuoyancyForce(float rho, TriangleData triangleData)
+    //Calculate the current velocity at the center of each triangle of the original boat mesh
+    private void CalculateSlammingVelocities(List<SlammingForceData> slammingForceData)
     {
-        // Buoyancy is a hydrostatic force - it's there even if the water isn't flowing or if the boat stays still
+        for (int i = 0; i < slammingForceData.Count; i++)
+        {
+            //Set the new velocity to the old velocity
+            slammingForceData[i].previousVelocity = slammingForceData[i].velocity;
 
-        // F_buoyancy = rho * g * V
-        // rho - density of the mediaum you are in
-        // g - gravity
-        // V - volume of fluid directly above the curved surface 
+            //Center of the triangle in world space
+            Vector3 center = transform.TransformPoint(slammingForceData[i].triangleCenter);
 
-        // V = z * S * n 
-        // z - distance to surface
-        // S - surface area
-        // n - normal to the surfac
-        Vector3 buoyancyForce = rho * Physics.gravity.y * -triangleData.centerDistance * triangleData.area * triangleData.normal;
-
-        //The vertical component of the hydrostatic forces don't cancel out but the horizontal do
-        buoyancyForce.x = 0f;
-        buoyancyForce.z = 0f;
-
-        return buoyancyForce;
+            //Get the current velocity at the center of the triangle
+            slammingForceData[i].velocity = WaterPhysicsMath.GetTriangleVelocity(hullRB, center);
+        }
     }
 
 }

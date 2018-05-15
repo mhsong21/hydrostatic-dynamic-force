@@ -20,51 +20,47 @@ public struct TriangleData
     public Vector3 v3;
 
     public Vector3 center;
+    public Vector3 velocity;
+    public float cosine;
     public float centerDistance;
     public float area;
     public Vector3 normal;
 
-    public TriangleData(VertexData p1, VertexData p2, VertexData p3, bool isUpsideTriangle)
+    public TriangleData(VertexData p1, VertexData p2, VertexData p3, int triangleType, Rigidbody hullRB, float timeSinceStart)
     {
+        // triangleType => 0 : upside, 1 : downside, 2 : above water
+
         this.v1 = p1.vertexGlobalPos;
         this.v2 = p2.vertexGlobalPos;
         this.v3 = p3.vertexGlobalPos;
 
-        if (isUpsideTriangle)
-        {
-            // p1 is upside vertex and p2, p3 are horizontal downside vertices
-            float z_0 = p1.distance;
-            float h = p2.distance - p1.distance;
-            float t_center = (4 * z_0 + 3 * h) / (6 * z_0 + 4 * h);
-
-            Vector3 v1_m = (this.v2 + this.v3) / 2f - this.v1;
-
-            this.center = this.v1 + v1_m * t_center;
-        }
-        else
-        {
-            // p1, p2 are horizontal upside vertices and p3 is downside vertex
-            float z_0 = p1.distance;
-            float h = p3.distance - p1.distance;
-            float t_center = (2 * z_0 + h) / (6 * z_0 + 2 * h);
-
-            Vector3 v3_m = (this.v1 + this.v2) / 2f - this.v3;
-
-            this.center = v3 + v3_m * t_center;
-        }
+        this.center = WaterPhysicsMath.GetTriangleCenter(p1, p2, p3, triangleType);
 
         // beause of simplification. center distance can be positive in submerged triangle
         // if centerDistance is positive, don't add to force
-        centerDistance = WaterPatch.instance.DistanceToWater(this.center, Time.time);
+        this.centerDistance = WaterPatch.instance.DistanceToWater(this.center, timeSinceStart);
 
         this.normal = Vector3.Cross(v2 - v1, v3 - v1).normalized;
-
-        //Area of the triangle
-        float a = Vector3.Distance(v1, v2);
-        float c = Vector3.Distance(v3, v1);
-
-        this.area = (a * c * Mathf.Sin(Vector3.Angle(v2 - v1, v3 - v1) * Mathf.Deg2Rad)) / 2f;
+        this.velocity = WaterPhysicsMath.GetTriangleVelocity(hullRB, this.center);
+        this.cosine = Vector3.Dot(this.velocity, this.normal) / this.velocity.magnitude;
+        this.area = WaterPhysicsMath.GetTriangleArea(v1, v2, v3);
     }
+}
+
+public class SlammingForceData 
+{
+    //The area of the original triangles - calculate once in the beginning because always the same
+    public float originalArea;
+    //How much area of a triangle in the whole boat is submerged
+    public float submergedArea;
+    //Same as above but previous time step
+    public float previousSubmergedArea;
+    //Need to save the center of the triangle to calculate the velocity
+    public Vector3 triangleCenter;
+    //Velocity
+    public Vector3 velocity;
+    //Same as above but previous time step
+    public Vector3 previousVelocity;
 }
 
 }

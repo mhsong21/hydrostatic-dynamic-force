@@ -10,6 +10,7 @@ namespace JustPirate
 
 public class HullMeshModifier
 {
+    private Rigidbody hullRB;
     private Transform hullTrans;
     private Vector3[] hullVertices;
     private int[] hullTriangles;
@@ -17,21 +18,56 @@ public class HullMeshModifier
     private Vector3[] hulVerticesGlobalPos;
     private float[] hullDistances;
 
-    public List<TriangleData> submergedTriangles = new List<TriangleData>();
+    private Mesh submergedMesh;
+    private MeshCollider submergedMeshCollider;
 
-    public HullMeshModifier(GameObject hullObj)
+    public List<TriangleData> submergedTriangles = new List<TriangleData>();
+    public List<TriangleData> aboveWaterTriangles = new List<TriangleData>();
+
+    //Slamming resistance forces
+    //Data that belongs to one triangle in the original boat mesh
+    public List<SlammingForceData> slammingForceDataList = new List<SlammingForceData>();
+    //To connect the submerged triangles with the original triangles
+    public List<int> indexOfOriginalTriangle = new List<int>();
+    //The total area of the entire boat
+    public float boatArea;
+
+    float timeSinceStart;
+
+    public HullMeshModifier(GameObject hullObj, GameObject submergedObj, GameObject aboveWaterObj)
     {
+        hullRB = hullObj.GetComponent<Rigidbody>();
         hullTrans = hullObj.transform;
         hullVertices = hullObj.GetComponent<MeshFilter>().mesh.vertices;
         hullTriangles = hullObj.GetComponent<MeshFilter>().mesh.triangles;
 
         hulVerticesGlobalPos = new Vector3[hullVertices.Length];
         hullDistances = new float[hullVertices.Length];
+
+        submergedMeshCollider = submergedObj.GetComponent<MeshCollider>();
+        submergedMesh = submergedObj.GetComponent<MeshFilter>().mesh;
+
+        for (int i = 0; i < (hullTriangles.Length / 3); i++)
+        {
+            slammingForceDataList.Add(new SlammingForceData());
+        }
     }
     
     public void CalculateVertexData()
     {
         submergedTriangles.Clear();
+        aboveWaterTriangles.Clear();
+
+        // Switch the submerged triangle area with the one in the previous time step
+        for (int j = 0; j < slammingForceDataList.Count; j++)
+        {
+            slammingForceDataList[j].previousSubmergedArea = slammingForceDataList[j].submergedArea;
+        }
+
+        indexOfOriginalTriangle.Clear();
+
+        //Make sure we find the distance to water with the same time
+        timeSinceStart = Time.time;
 
         for (int vertexIndex = 0; vertexIndex < hullVertices.Length; ++vertexIndex)
         {
@@ -39,7 +75,7 @@ public class HullMeshModifier
 
             hulVerticesGlobalPos[vertexIndex] = globalPos;
 
-            hullDistances[vertexIndex] = WaterPatch.instance.DistanceToWater(globalPos, Time.time);
+            hullDistances[vertexIndex] = WaterPatch.instance.DistanceToWater(globalPos, timeSinceStart);
         }
 
         GenerateSubmergedTriangles();
@@ -53,6 +89,7 @@ public class HullMeshModifier
         vertexDataList.Add(new VertexData());
 
         int i = 0;
+        int triangleCounter = 0;
         while (i < hullTriangles.Length)
         {
             // One triangle consists of three vertices
@@ -66,7 +103,12 @@ public class HullMeshModifier
 
             // Over the surface
             if (vertexDataList[0].distance > 0f && vertexDataList[1].distance > 0f && vertexDataList[2].distance > 0f)
+            {
+                aboveWaterTriangles.Add(new TriangleData(vertexDataList[0], vertexDataList[1], vertexDataList[2], 2, hullRB, timeSinceStart));
+
+                slammingForceDataList[triangleCounter].submergedArea = 0f;
                 continue;
+            }
 
             // Sort to cut triangles
             vertexDataList.Sort((x, y) => x.distance.CompareTo(y.distance));
@@ -75,25 +117,33 @@ public class HullMeshModifier
             // Submerged
             if (vertexDataList[0].distance < 0f && vertexDataList[1].distance < 0f && vertexDataList[2].distance < 0f)
             {
-                CutSubmergedTriangleToHorizontal(vertexDataList);
+                //We have already calculated the area of this triangle
+                slammingForceDataList[triangleCounter].submergedArea = slammingForceDataList[triangleCounter].originalArea;
+
+                CutSubmergedTriangleToHorizontal(vertexDataList, triangleCounter);
             }
             else
             {
                 if (vertexDataList[0].distance > 0f && vertexDataList[1].distance < 0f && vertexDataList[2].distance < 0f)
                 {
-                    CutTriangleOneAboveWater(vertexDataList);
+                    CutTriangleOneAboveWater(vertexDataList, triangleCounter);
                 }
                 //Two vertices are above the water, the other is below
                 else if (vertexDataList[0].distance > 0f && vertexDataList[1].distance > 0f && vertexDataList[2].distance < 0f)
                 {
-                    CutTriangleTwoAboveWater(vertexDataList);
+                    CutTriangleTwoAboveWater(vertexDataList, triangleCounter);
                 }
             }
+
+            ++triangleCounter;
         }
     }
 
-    private void CutSubmergedTriangleToHorizontal(List<VertexData> vertexDataList)
+    private void CutSubmergedTriangleToHorizontal(List<VertexData> vertexDataList, int triangleCounter)
     {
+        // Question :: What about horizontally placed triangle? what if U, M, L distances are same (bottom of cube)
+        // I will try that not cut into 2 triangle, just make triangle data special case; 
+
         // List parameter is sorted already and count of 3
         VertexData U = vertexDataList[0];
         VertexData M = vertexDataList[1];
@@ -122,12 +172,14 @@ public class HullMeshModifier
         // Already horizontal triangle
         if (U.distance - M.distance < 0.001f)
         {
-            submergedTriangles.Add(new TriangleData(U, DR, DL, false));
+            indexOfOriginalTriangle.Add(triangleCounter);
+            submergedTriangles.Add(new TriangleData(U, DR, DL, 1, hullRB, timeSinceStart));
             return;
         }
         else if (M.distance - L.distance < 0.001f)
         {
-            submergedTriangles.Add(new TriangleData(U, DR, DL, true));
+            indexOfOriginalTriangle.Add(triangleCounter);
+            submergedTriangles.Add(new TriangleData(U, DR, DL, 0, hullRB, timeSinceStart));
             return;
         }
 
@@ -142,17 +194,21 @@ public class HullMeshModifier
         // add upside, downside triangle clockwisely
         if (L.clockwiseIndex == DL.clockwiseIndex)
         {
-            submergedTriangles.Add(new TriangleData(U, M, cutLUData, true));
-            submergedTriangles.Add(new TriangleData(cutLUData, M, L, false));
+            indexOfOriginalTriangle.Add(triangleCounter);
+            indexOfOriginalTriangle.Add(triangleCounter);
+            submergedTriangles.Add(new TriangleData(U, M, cutLUData, 0, hullRB, timeSinceStart));
+            submergedTriangles.Add(new TriangleData(cutLUData, M, L, 1, hullRB, timeSinceStart));
         }
         else
         {
-            submergedTriangles.Add(new TriangleData(U, cutLUData, M, true));
-            submergedTriangles.Add(new TriangleData(M, cutLUData, L, false));
+            indexOfOriginalTriangle.Add(triangleCounter);
+            indexOfOriginalTriangle.Add(triangleCounter);
+            submergedTriangles.Add(new TriangleData(U, cutLUData, M, 0, hullRB, timeSinceStart));
+            submergedTriangles.Add(new TriangleData(M, cutLUData, L, 1, hullRB, timeSinceStart));
         }
     }
 
-    private void CutTriangleOneAboveWater(List<VertexData> vertexDataList)
+    private void CutTriangleOneAboveWater(List<VertexData> vertexDataList, int triangleCounter)
     {
         // List parameter is sorted already and count of 3
         VertexData U = vertexDataList[0];
@@ -185,8 +241,6 @@ public class HullMeshModifier
         VertexData I_MData = new VertexData();
         I_MData.vertexGlobalPos = I_M;
         I_MData.distance = WaterPatch.instance.DistanceToWater(I_M, Time.time);
-        if (I_MData.distance > 0.0001f)
-            Debug.Log(I_MData.distance);
 
         //Point I_L
         Vector3 LU = U.vertexGlobalPos - DR.vertexGlobalPos;
@@ -196,8 +250,12 @@ public class HullMeshModifier
         VertexData I_LData = new VertexData();
         I_LData.vertexGlobalPos = I_L;
         I_LData.distance = WaterPatch.instance.DistanceToWater(I_L, Time.time);
-        if (I_LData.distance > 0.0001f)
-            Debug.Log(I_LData.distance);
+
+        //1 triangle above the water
+        aboveWaterTriangles.Add(new TriangleData(I_MData, U, I_LData, 2, hullRB, timeSinceStart));
+
+        float totalArea = WaterPhysicsMath.GetTriangleArea(DL.vertexGlobalPos, I_M, I_L) + WaterPhysicsMath.GetTriangleArea(DL.vertexGlobalPos, I_L, DR.vertexGlobalPos);
+        slammingForceDataList[triangleCounter].submergedArea = totalArea;
 
         List<VertexData> tempDataList = new List<VertexData>();
         DL.clockwiseIndex = 0;
@@ -208,7 +266,7 @@ public class HullMeshModifier
         tempDataList.Add(I_LData);
         tempDataList.Sort((x, y) => x.distance.CompareTo(y.distance));
         tempDataList.Reverse();
-        CutSubmergedTriangleToHorizontal(tempDataList);
+        CutSubmergedTriangleToHorizontal(tempDataList, triangleCounter);
 
         tempDataList.Clear();
         DL.clockwiseIndex = 0;
@@ -219,10 +277,10 @@ public class HullMeshModifier
         tempDataList.Add(DR);
         tempDataList.Sort((x, y) => x.distance.CompareTo(y.distance));
         tempDataList.Reverse();
-        CutSubmergedTriangleToHorizontal(tempDataList);
+        CutSubmergedTriangleToHorizontal(tempDataList, triangleCounter);
     }
 
-    private void CutTriangleTwoAboveWater(List<VertexData> vertexDataList)
+    private void CutTriangleTwoAboveWater(List<VertexData> vertexDataList, int triangleCounter)
     {
         //H and M are above the water
         //H is after the vertice that's below water, which is L
@@ -281,6 +339,8 @@ public class HullMeshModifier
         J_HData.vertexGlobalPos = J_H;
         J_HData.distance = WaterPatch.instance.DistanceToWater(J_H, Time.time);
 
+        slammingForceDataList[triangleCounter].submergedArea = WaterPhysicsMath.GetTriangleArea(L, J_H, J_M);
+
         List<VertexData> tempDataList = new List<VertexData>();
         LData.clockwiseIndex = 0;
         J_HData.clockwiseIndex = 1;
@@ -290,7 +350,7 @@ public class HullMeshModifier
         tempDataList.Add(J_MData);
         tempDataList.Sort((x, y) => x.distance.CompareTo(y.distance));
         tempDataList.Reverse();
-        CutSubmergedTriangleToHorizontal(tempDataList);
+        CutSubmergedTriangleToHorizontal(tempDataList, triangleCounter);
     }
 
     public void DisplayMesh(Mesh mesh, string name, List<TriangleData> trianglesData)
@@ -328,6 +388,44 @@ public class HullMeshModifier
         mesh.triangles = triangles.ToArray();
 
         mesh.RecalculateBounds();
+    }
+
+    //Calculate the area of each triangle in the boat mesh and store them in an array
+    private void CalculateOriginalTrianglesArea()
+    {
+        //Loop through all the triangles (3 vertices at a time = 1 triangle)
+        int i = 0;
+        int triangleCounter = 0;
+        while (i < hullTriangles.Length)
+        {
+            Vector3 p1 = hullVertices[hullTriangles[i++]];
+
+            Vector3 p2 = hullVertices[hullTriangles[i++]];
+
+            Vector3 p3 = hullVertices[hullTriangles[i++]];
+
+            //Calculate the area of the triangle
+            float triangleArea = WaterPhysicsMath.GetTriangleArea(p1, p2, p3);
+       
+            //Store the area in a list
+            slammingForceDataList[triangleCounter].originalArea = triangleArea;
+
+            //The total area
+            boatArea += triangleArea;
+
+            triangleCounter += 1;
+        }
+    }
+
+    //Calculate the length of the mesh that's below the water
+    public float CalculateUnderWaterLength()
+    {
+        //Approximate the length as the length of the underwater mesh
+        float underWaterLength = submergedMesh.bounds.size.z;
+
+        //Debug.Log(underWaterMesh.bounds.size.z);
+
+        return underWaterLength;
     }
 }
 

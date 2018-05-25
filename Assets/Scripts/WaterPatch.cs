@@ -1,7 +1,6 @@
 using UnityEngine;
 using System.Collections;
 
-//Controlls the water
 public class WaterPatch : MonoBehaviour 
 {
     public static WaterPatch instance;
@@ -17,12 +16,11 @@ public class WaterPatch : MonoBehaviour
     public float noiseStrength = 1f;
     public float noiseWalk = 1f;
 
-    void Start()
+    void Awake()
     {
         instance = this;
     }
 
-    //Get the y coordinate from whatever wavetype we are using
     public float GetWaveYPos(Vector3 position, float timeSinceStart)
     {
         //if (isMoving)
@@ -37,10 +35,6 @@ public class WaterPatch : MonoBehaviour
 		return 0f;
     }
 
-    //Find the distance from a vertice to water
-    //Make sure the position is in global coordinates
-    //Positive if above water
-    //Negative if below water
     public float DistanceToWater(Vector3 position, float timeSinceStart)
     {
         float waterHeight = GetWaveYPos(position, timeSinceStart);

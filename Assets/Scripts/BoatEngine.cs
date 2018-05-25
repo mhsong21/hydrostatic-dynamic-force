@@ -3,16 +3,12 @@ using System.Collections;
 
 public class BoatEngine : MonoBehaviour 
 {
-    //Drags
     public Transform waterJetTransform;
 
-    //How fast should the engine accelerate?
     public float powerFactor;
 
-    //What's the boat's maximum engine power?
     public float maxPower;
 
-    //The boat's current engine power is public for debugging
     public float currentJetPower;
 
     private float thrustFromWaterJet = 0f;
@@ -23,13 +19,11 @@ public class BoatEngine : MonoBehaviour
 
     HullController boatController;
 
-    void Start() 
+    void Awake() 
 	{
         boatRB = GetComponent<Rigidbody>();
-
         boatController = GetComponent<HullController>();
     }
-
 
     void Update() 
 	{
@@ -88,7 +82,6 @@ public class BoatEngine : MonoBehaviour
 
     void UpdateWaterJet()
     {
-        //Debug.Log(boatController.CurrentSpeed);
 
         Vector3 forceToAdd = -waterJetTransform.forward * currentJetPower;
 

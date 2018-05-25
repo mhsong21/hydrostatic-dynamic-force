@@ -1,100 +1,58 @@
 using UnityEngine;
-using System.Collections;
 
-public class BoatEngine : MonoBehaviour 
+namespace JustPirate
 {
-    public Transform waterJetTransform;
-
-    public float powerFactor;
-
-    public float maxPower;
-
-    public float currentJetPower;
-
-    private float thrustFromWaterJet = 0f;
-
-    private Rigidbody boatRB;
-
-    private float WaterJetRotation_Y = 0f;
-
-    HullController boatController;
-
-    void Awake() 
-	{
-        boatRB = GetComponent<Rigidbody>();
-        boatController = GetComponent<HullController>();
-    }
-
-    void Update() 
-	{
-        UserInput();
-    }
-
-    void FixedUpdate()
+    public class BoatEngine : MonoBehaviour
     {
-        UpdateWaterJet();
-    }
+        public float enginePower;
+        public float currentSpeed;
+        public float currentAcceleration;
+        public float maxAcceleration;
+        public float maxBackwardAcceleration;
+        public Transform engineTransform;
 
-    void UserInput()
-    {
-        //Forward / reverse
-        if (Input.GetKey(KeyCode.W))
+        private Rigidbody rigidbody3d;
+        protected Rigidbody Rigidbody3d
         {
-            if (boatController.CurrentSpeed < 50f && currentJetPower < maxPower)
+            get
             {
-                currentJetPower += 1f * powerFactor;
+                if (rigidbody3d == null)
+                    rigidbody3d = GetComponent<Rigidbody>();
+                return rigidbody3d;
             }
         }
-        else
+
+        public void Update()
         {
-            currentJetPower = 0f;
+            UpdateUserInput();
         }
 
-        //Steer left
-        if (Input.GetKey(KeyCode.A))
+        public void UpdateUserInput()
         {
-            WaterJetRotation_Y = waterJetTransform.localEulerAngles.y + 2f;
-
-            if (WaterJetRotation_Y > 30f && WaterJetRotation_Y < 270f)
+            if (Input.GetAxis("Vertical") > 0)
             {
-                WaterJetRotation_Y = 30f;
+                currentAcceleration = Mathf.Clamp(currentAcceleration + enginePower, 0, maxAcceleration);
             }
-
-            Vector3 newRotation = new Vector3(0f, WaterJetRotation_Y, 0f);
-
-            waterJetTransform.localEulerAngles = newRotation;
+            else if (Input.GetAxis("Vertical") < 0)
+            {
+                currentAcceleration = Mathf.Clamp(currentAcceleration - enginePower, -maxBackwardAcceleration, 0);
+            }
+            else
+            {
+                currentAcceleration = 0;
+            }
         }
-        //Steer right
-        else if (Input.GetKey(KeyCode.D))
+
+        public void FixedUpdate()
         {
-            WaterJetRotation_Y = waterJetTransform.localEulerAngles.y - 2f;
+            currentSpeed = Rigidbody3d.velocity.magnitude;
+            AddForce();
+        }
 
-            if (WaterJetRotation_Y < 330f && WaterJetRotation_Y > 90f)
-            {
-                WaterJetRotation_Y = 330f;
-            }
-
-            Vector3 newRotation = new Vector3(0f, WaterJetRotation_Y, 0f);
-
-            waterJetTransform.localEulerAngles = newRotation;
+        public void AddForce()
+        {
+            Vector3 force = -engineTransform.up * currentAcceleration;
+            Rigidbody3d.AddForceAtPosition(force, engineTransform.position, ForceMode.Acceleration);
         }
     }
-
-    void UpdateWaterJet()
-    {
-
-        Vector3 forceToAdd = -waterJetTransform.forward * currentJetPower;
-
-        //Only add the force if the engine is below sea level
-        float waveYPos = WaterPatch.instance.GetWaveYPos(waterJetTransform.position, Time.time);
-
-        if (waterJetTransform.position.y < waveYPos)
-        {
-            boatRB.AddForceAtPosition(forceToAdd, waterJetTransform.position);
-        }
-        else
-        {
-            boatRB.AddForceAtPosition(Vector3.zero, waterJetTransform.position);
-        }
-    }
-}	
+}

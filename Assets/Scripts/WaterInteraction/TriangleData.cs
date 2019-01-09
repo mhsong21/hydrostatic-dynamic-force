@@ -1,7 +1,7 @@
 using UnityEngine;
 using System;
 
-namespace JustPirate
+namespace WaterInteraction
 {
     public struct VertexInfo : IComparable<VertexInfo>
     {

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace JustPirate
+namespace WaterInteraction
 {
     public static class WaterInteractionUtils
     {

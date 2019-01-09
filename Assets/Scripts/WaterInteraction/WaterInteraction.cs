@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 
-namespace JustPirate
+namespace WaterInteraction
 {
     [RequireComponent (typeof (Rigidbody))]
     [RequireComponent (typeof (CurveLookUpTable))]
@@ -52,16 +52,6 @@ namespace JustPirate
             }
         }
 
-        private Mesh mesh;
-        protected Mesh Mesh
-        {
-            get
-            {
-                if (mesh == null)
-                    mesh = GetComponent<MeshFilter>().mesh;
-                return mesh;
-            }
-        }
         private Rigidbody rigidbody3d;
         protected Rigidbody Rigidbody3d
         {

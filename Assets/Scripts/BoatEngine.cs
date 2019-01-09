@@ -1,15 +1,28 @@
 using UnityEngine;
 
-namespace JustPirate
+namespace WaterInteraction
 {
     public class BoatEngine : MonoBehaviour
     {
         public float enginePower;
+        public float rotationPower;
         public float currentSpeed;
         public float currentAcceleration;
+        public float currentRotation;
         public float maxAcceleration;
         public float maxBackwardAcceleration;
         public Transform engineTransform;
+
+        private Rigidbody engineRB;
+        protected Rigidbody EngineRB
+        {
+            get
+            {
+                if (engineRB == null)
+                    engineRB = engineTransform.GetComponent<Rigidbody>();
+                return engineRB;
+            }
+        }
 
         private Rigidbody rigidbody3d;
         protected Rigidbody Rigidbody3d
@@ -41,6 +54,21 @@ namespace JustPirate
             {
                 currentAcceleration = 0;
             }
+
+            if (Input.GetAxis("Horizontal") > 0)
+            {
+                // currentRotation += rotationPower;
+                currentRotation = Mathf.Clamp(currentRotation + rotationPower, -80f, 80f);
+            }
+            else if (Input.GetAxis("Horizontal") < 0)
+            {
+                // currentRotation -= rotationPower;
+                currentRotation = Mathf.Clamp(currentRotation - rotationPower, -80f, 80f);
+            }
+            else
+            {
+                currentRotation *= 0.8f;
+            }
         }
 
         public void FixedUpdate()
@@ -51,8 +79,10 @@ namespace JustPirate
 
         public void AddForce()
         {
-            Vector3 force = -engineTransform.up * currentAcceleration;
-            Rigidbody3d.AddForceAtPosition(force, engineTransform.position, ForceMode.Acceleration);
+            // vector = Quaternion.Euler(0, -45, 0) * vector;
+
+            Vector3 force = Quaternion.Euler(0, -currentRotation, 0) * -engineTransform.up * currentAcceleration;
+            EngineRB.AddForceAtPosition(force, engineTransform.position, ForceMode.Acceleration);
         }
     }
 }

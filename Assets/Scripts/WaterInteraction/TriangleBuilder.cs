@@ -7,7 +7,7 @@ using System.Collections.Generic;
 // https://www.gamasutra.com/view/news/237528/Water_interaction_model_for_boats_in_video_games.php
 // https://www.gamasutra.com/view/news/263237/Water_interaction_model_for_boats_in_video_games_Part_2.php
 
-namespace JustPirate
+namespace WaterInteraction
 {
     public enum TriangleState
     {
